@@ -53,6 +53,9 @@ contract SLAContract is AccessControl {
     mapping(uint256 => mapping(uint256 => uint256)) public measuredValues;
     mapping(uint256 => mapping(uint256 => bool)) public valueMeasured;
 
+    mapping(uint256 => mapping(uint256 => uint256)) public measurementVersions;
+    mapping(uint256 => mapping(uint256 => uint256)) public measurementTimestamps;
+
     event SLACreated(uint256 indexed slaId, address indexed buyer, address indexed seller, uint256 escrowValue);
     event ClauseAdded(uint256 indexed slaId, uint256 indexed clauseId, DisputeType disputeType);
     event ValueUpdated(uint256 indexed slaId, uint256 indexed clauseId, uint256 measuredValue);
@@ -69,6 +72,8 @@ contract SLAContract is AccessControl {
         uint256 _escrowValue,
         Clause[] memory _clauses
     ) external onlyRole(ADMIN_ROLE) returns (uint256) {
+        require(_buyer != address(0) && _seller != address(0) && _buyer != _seller, "Invalid parties");
+        require(_clauses.length > 0, "No clauses");
         uint256 slaId = ++slaCounter;
         SLA storage newSLA = slas[slaId];
         newSLA.buyer = _buyer;
@@ -77,6 +82,7 @@ contract SLAContract is AccessControl {
         newSLA.isActive = true;
 
         for (uint256 i = 0; i < _clauses.length; i++) {
+            require(_clauses[i].penaltyBps <= 10000, "Invalid penalty");
             newSLA.clauses[i] = _clauses[i];
             emit ClauseAdded(slaId, i, _clauses[i].disputeType);
         }
@@ -92,6 +98,8 @@ contract SLAContract is AccessControl {
 
         measuredValues[_slaId][_clauseId] = _measuredValue;
         valueMeasured[_slaId][_clauseId] = true;
+        measurementVersions[_slaId][_clauseId]++;
+        measurementTimestamps[_slaId][_clauseId] = block.timestamp;
 
         emit ValueUpdated(_slaId, _clauseId, _measuredValue);
     }
@@ -128,12 +136,24 @@ contract SLAContract is AccessControl {
         return (EvalStatus.NoBreach, 0);
     }
 
+    function isParty(uint256 slaId, address user) external view returns (bool) {
+        SLA storage sla = slas[slaId];
+        return sla.isActive && (user == sla.buyer || user == sla.seller);
+    }
+
+    function getParties(uint256 slaId) external view returns (address buyer, address seller) {
+        require(slas[slaId].isActive, "SLA not active");
+        return (slas[slaId].buyer, slas[slaId].seller);
+    }
+
     function getClause(uint256 _slaId, uint256 _clauseId) external view returns (
         DisputeType disputeType,
         Operator operator,
         uint256 threshold,
         uint256 penaltyBps
     ) {
+        require(slas[_slaId].isActive, "SLA not active");
+        require(_clauseId < slas[_slaId].clauseCount, "Invalid clauseId");
         Clause storage c = slas[_slaId].clauses[_clauseId];
         return (c.disputeType, c.operator, c.threshold, c.penaltyBps);
     }

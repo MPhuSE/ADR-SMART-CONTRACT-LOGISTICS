@@ -30,6 +30,8 @@ describe("Automated Multi-Tier Dispute Resolution", function () {
             await registry.getAddress()
         );
 
+        await evidenceVault.setResolution(await resolution.getAddress());
+
         // Grant Roles
         const ORACLE_ROLE = await slaContract.ORACLE_ROLE();
         const RESOLUTION_ROLE = await registry.RESOLUTION_ROLE();
@@ -89,6 +91,10 @@ describe("Automated Multi-Tier Dispute Resolution", function () {
 
     describe("2. Evidence tests", function () {
         it("Submit and verify evidence", async function () {
+            await slaContract.createSLA(buyer.address, seller.address, 0, [{
+                disputeType: 2, operator: 0, threshold: 100, penaltyBps: 1000
+            }]);
+            await resolution.connect(buyer).createDispute(1, 0, "");
             const cid = "Qm123";
             const hash = ethers.keccak256(ethers.toUtf8Bytes(cid));
             
@@ -102,6 +108,10 @@ describe("Automated Multi-Tier Dispute Resolution", function () {
         });
 
         it("Verify evidence wrong hash", async function () {
+            await slaContract.createSLA(buyer.address, seller.address, 0, [{
+                disputeType: 2, operator: 0, threshold: 100, penaltyBps: 1000
+            }]);
+            await resolution.connect(buyer).createDispute(1, 0, "");
             const cid = "Qm123";
             const hash = ethers.keccak256(ethers.toUtf8Bytes(cid));
             const wrongHash = ethers.keccak256(ethers.toUtf8Bytes("wrong"));
@@ -158,7 +168,7 @@ describe("Automated Multi-Tier Dispute Resolution", function () {
                 disputeType: 2, operator: 0, threshold: 100, penaltyBps: 1000
             }]);
             await resolution.connect(buyer).createDispute(1, 0, "");
-            await resolution.escalateToTier2(1);
+            await resolution.connect(buyer).escalateToTier2(1);
 
             // 3 arbitrators commit
             // Arbitrators: arbitrator1, arbitrator2, arbitrator3
@@ -205,11 +215,11 @@ describe("Automated Multi-Tier Dispute Resolution", function () {
                 disputeType: 2, operator: 0, threshold: 100, penaltyBps: 1000
             }]);
             await resolution.connect(buyer).createDispute(1, 0, "");
-            await resolution.escalateToTier2(1);
+            await resolution.connect(buyer).escalateToTier2(1);
             await time.increase(86401);
             await resolution.transitionToReveal(1);
             await time.increase(86401);
-            await resolution.finalizeVote(1); // Resolves None if no votes
+            await resolution.finalizeVote(1); // None remains unresolved; a party may request expert review
 
             // Appeal
             await resolution.connect(seller).appealToTier3(1, { value: ethers.parseEther("0.5") });

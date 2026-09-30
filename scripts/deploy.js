@@ -27,6 +27,9 @@ async function main() {
     await resolution.waitForDeployment();
     console.log(`DisputeResolution deployed to: ${await resolution.getAddress()}`);
 
+    await vault.setResolution(await resolution.getAddress());
+    console.log("Bound EvidenceVault to DisputeResolution");
+
     // Set up roles
     const RESOLUTION_ROLE = await registry.RESOLUTION_ROLE();
     await registry.grantRole(RESOLUTION_ROLE, await resolution.getAddress());
@@ -35,4 +38,4 @@ async function main() {
     console.log("Deployment complete.");
 }
 
-main().catch(console.error);
+main().catch((error) => { console.error(error); process.exitCode = 1; });

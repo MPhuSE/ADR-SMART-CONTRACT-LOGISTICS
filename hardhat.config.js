@@ -6,12 +6,14 @@ module.exports = {
   solidity: {
     version: "0.8.20",
     settings: {
+      evmVersion: "paris",
       optimizer: {
         enabled: true,
         runs: 200
       }
     }
   },
+  networks: { hardhat: { hardfork: "shanghai" } },
   gasReporter: {
     enabled: process.env.REPORT_GAS !== undefined,
     currency: 'USD',
