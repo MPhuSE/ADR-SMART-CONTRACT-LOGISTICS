@@ -1,0 +1,170 @@
+{
+  "artifactVersion": "security-fix (new contracts; not the archived manuscript measurements)",
+  "seed": 42,
+  "schemaVersion": 3,
+  "implementationHashes": {
+    "SLAContract": "d0c1974ed70a07f8d023669b5cb63f615df2604d6bed31e6c44a53e510452ff7",
+    "EvidenceVault": "ed5f2020cbbfa95df2716fa8b56f98624be265f0823a9199103cd26f1686be1c",
+    "DisputeRegistry": "ecd85c464f3156f0db399d2a87872ed0efba3ac83a79297aee5aea9c9f70f38f",
+    "DisputeResolution": "359172bcd4f807b9c4c62261df9e88aa5f3b7d7e99aef5492033af5610399ce2"
+  },
+  "params": {
+    "numDisputes": 1000,
+    "pArbHonest": 0.8,
+    "pExpHonest": 0.9,
+    "pAppeal": 0.4,
+    "typeProbabilities": [
+      0.3,
+      0.2,
+      0.2,
+      0.15,
+      0.15
+    ],
+    "arbitratorPoolSize": 10,
+    "expertPoolSize": 6
+  },
+  "totalDisputes": 1000,
+  "routing": {
+    "tier1": {
+      "n": 621,
+      "rate": 62.1
+    },
+    "tier2": {
+      "n": 228,
+      "rate": 22.8
+    },
+    "tier3": {
+      "n": 151,
+      "rate": 15.1
+    },
+    "note": "Routing is determined by a fixed type->tier map plus genuine appeals; Tier 1/2 shares restate the input type distribution, Tier 3 share is emergent from appeals."
+  },
+  "appeals": {
+    "nEligible": 379,
+    "nAppealed": 151,
+    "conditionalRate": 39.8,
+    "overallShare": 15.1,
+    "note": "conditionalRate uses all Tier 2 jury rulings as the denominator; overallShare uses all disputes."
+  },
+  "appealRate": 39.8,
+  "overallAppealShare": 15.1,
+  "correctness": {
+    "overall": {
+      "rate": 97.5,
+      "n": 1000,
+      "correct": 975
+    },
+    "note": "Tier 1 is deterministic (mechanism check, not adjudication accuracy). Only Tier 2/Tier 3 are stochastic.",
+    "byType": {
+      "LateDelivery": {
+        "n": 299,
+        "correct": 299,
+        "rate": 100,
+        "ci95": [
+          98.7,
+          100
+        ]
+      },
+      "Shortage": {
+        "n": 176,
+        "correct": 176,
+        "rate": 100,
+        "ci95": [
+          97.9,
+          100
+        ]
+      },
+      "Damage": {
+        "n": 233,
+        "correct": 215,
+        "rate": 92.3,
+        "ci95": [
+          88.1,
+          95.1
+        ]
+      },
+      "DeliveryDenial": {
+        "n": 146,
+        "correct": 139,
+        "rate": 95.2,
+        "ci95": [
+          90.4,
+          97.7
+        ]
+      },
+      "PaymentDelay": {
+        "n": 146,
+        "correct": 146,
+        "rate": 100,
+        "ci95": [
+          97.4,
+          100
+        ]
+      }
+    },
+    "tier2Jury": {
+      "n": 379,
+      "correct": 340,
+      "observedRate": 89.7,
+      "ci95": [
+        86.2,
+        92.4
+      ],
+      "theoreticalRate": 89.6,
+      "note": "Measured from the jury's own ruling over all subjective disputes, independent of appeal."
+    },
+    "tier3Expert": {
+      "n": 151,
+      "correct": 151,
+      "observedRate": 100,
+      "ci95": [
+        97.5,
+        100
+      ],
+      "theoreticalRate": 99.1
+    }
+  },
+  "gasByTier": {
+    "1": {
+      "meanTotalGas": 560680,
+      "n": 621
+    },
+    "2": {
+      "meanTotalGas": 1317040,
+      "n": 228
+    },
+    "3": {
+      "meanTotalGas": 2741184,
+      "n": 151
+    },
+    "note": "meanTotalGas = open + resolve + enforce gas summed over the full on-chain path of disputes whose terminal tier is the key. Tier 3 includes its Tier 2 phase + appeal, so Tier3 >= Tier2 by construction."
+  },
+  "gasAccounting": {
+    "includedInPerCase": [
+      "createDispute",
+      "submitEvidence",
+      "resolveTier1 or voting path",
+      "enforce"
+    ],
+    "excludedFromPerCase": [
+      "deployments",
+      "role grants",
+      "vault binding",
+      "updateMeasuredValue",
+      "createSLA",
+      "voter registration",
+      "bond withdrawal"
+    ],
+    "note": "transitionToReveal is included in resolveGas and is also recorded separately in gas-report.csv from schemaVersion 2 onward."
+  },
+  "configuredWindows": {
+    "tier1Minutes": 1440,
+    "tier2Minutes": 4320,
+    "tier3Minutes": 5760,
+    "note": "Configured waits on the exercised immediate-routing path: Tier 1 includes its review window; Tier 2 includes jury commit/reveal plus appeal window; Tier 3 appeals immediately and includes jury/expert commit/reveal only. NOT measured human latency."
+  },
+  "slashing": {
+    "nonRevealSlash": 0,
+    "note": "Minority voters are not slashed. This choice alone does not establish incentive compatibility or eliminate herding. Slashing applies only to non-revelation; under the independent-vote model all voters reveal, so no slashing events occur in this run."
+  }
+}

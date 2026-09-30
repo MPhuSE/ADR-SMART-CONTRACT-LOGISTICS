@@ -42,10 +42,8 @@ describe("Invariant tests", function () {
         expect(d.finalRuling).to.equal(1n); // Specifically BuyerWins, meaning it cannot be SellerWins
     });
 
-    it("Fairness: Incorrect voter is slashed", async function () {
-        // Mock a scenario where 2 vote Buyer, 1 vote Seller
-        // Setup ...
-        // Simplification for invariant check: If a user has wrongVotes > 0, their stake must have decreased.
+    it("Accounting: authorized slash decreases stake and records the actual amount", async function () {
+        // Direct registry accounting check, not evidence that minority voters are penalized.
         const initialStake = (await registry.arbitrators(arbitrator1.address)).stakedAmount;
         
         // Let's directly simulate slashing via registry for the invariant test

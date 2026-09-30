@@ -23,3 +23,7 @@ scripts/__pycache__/
 
 # Generated manuscript (regenerated from results/ by the python scripts)
 *.docx
+
+# Generated post-remediation runs (keep historical results intact)
+/results/security-fix/
+/results/ci-smoke/

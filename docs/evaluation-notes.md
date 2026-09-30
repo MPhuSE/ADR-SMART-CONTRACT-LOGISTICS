@@ -1,3 +1,5 @@
+> Historical evaluation of source commit `48d4c854955d80449a0c94386e0084188973e12a`. These results are not measurements of the security-remediation contracts. See [security-remediation.md](security-remediation.md) and the separate `results/security-remediation-seed42/` run.
+
 # Evaluation Notes for ADR Prototype
 
 This document provides guidance on how to integrate the generated data (`results.csv`, `gas-report.csv`, `summary.json`) into your research paper for the **"Automated Multi-Tier Dispute Resolution for Supply-Chain Logistics"** protocol.

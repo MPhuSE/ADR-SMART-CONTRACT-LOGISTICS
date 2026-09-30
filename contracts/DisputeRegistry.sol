@@ -6,8 +6,7 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 contract DisputeRegistry is AccessControl, ReentrancyGuard {
     bytes32 public constant EXPERT_ROLE = keccak256("EXPERT_ROLE");
-    bytes32 public constant RESOLUTION_ROLE = keccak256("RESOLUTION_ROLE"); // Granted to DisputeResolution.sol
-
+    bytes32 public constant RESOLUTION_ROLE = keccak256("RESOLUTION_ROLE");
     uint256 public constant ARBITRATOR_STAKE = 1 ether;
     uint256 public constant EXPERT_STAKE = 2 ether;
 
@@ -18,137 +17,150 @@ contract DisputeRegistry is AccessControl, ReentrancyGuard {
         uint256 correctVotes;
         uint256 wrongVotes;
     }
-
     mapping(address => ArbitratorProfile) public arbitrators;
     address[] public registeredArbitrators;
-    
     mapping(address => ArbitratorProfile) public experts;
     address[] public registeredExperts;
+    mapping(address => uint256) private arbitratorIndex;
+    mapping(address => uint256) private expertIndex;
+    uint256 public slashedFunds;
 
     event ArbitratorRegistered(address indexed arbitrator, uint256 amount);
     event ExpertRegistered(address indexed expert, uint256 amount);
     event Unstaked(address indexed user, uint256 amount);
     event Slashed(address indexed user, uint256 amount);
     event Rewarded(address indexed user, uint256 amount);
+    event StakeToppedUp(address indexed user, uint256 amount);
+    event SlashedFundsWithdrawn(address indexed recipient, uint256 amount);
 
-    constructor() {
-        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
-    }
+    constructor() { _grantRole(DEFAULT_ADMIN_ROLE, msg.sender); }
 
     function registerArbitrator() external payable nonReentrant {
         require(msg.value == ARBITRATOR_STAKE, "Incorrect stake");
-        require(!arbitrators[msg.sender].isRegistered, "Already registered");
-
-        arbitrators[msg.sender] = ArbitratorProfile({
-            isRegistered: true,
-            stakedAmount: msg.value,
-            activeDisputes: 0,
-            correctVotes: 0,
-            wrongVotes: 0
-        });
+        require(!arbitrators[msg.sender].isRegistered && !experts[msg.sender].isRegistered, "Already registered");
+        arbitrators[msg.sender] = ArbitratorProfile(true, msg.value, 0, 0, 0);
         registeredArbitrators.push(msg.sender);
+        arbitratorIndex[msg.sender] = registeredArbitrators.length;
         emit ArbitratorRegistered(msg.sender, msg.value);
     }
 
     function registerExpert() external payable nonReentrant {
         require(msg.value == EXPERT_STAKE, "Incorrect stake");
-        require(!experts[msg.sender].isRegistered, "Already registered");
-
-        experts[msg.sender] = ArbitratorProfile({
-            isRegistered: true,
-            stakedAmount: msg.value,
-            activeDisputes: 0,
-            correctVotes: 0,
-            wrongVotes: 0
-        });
+        require(!experts[msg.sender].isRegistered && !arbitrators[msg.sender].isRegistered, "Already registered");
+        experts[msg.sender] = ArbitratorProfile(true, msg.value, 0, 0, 0);
         registeredExperts.push(msg.sender);
+        expertIndex[msg.sender] = registeredExperts.length;
         _grantRole(EXPERT_ROLE, msg.sender);
         emit ExpertRegistered(msg.sender, msg.value);
     }
 
+    function _profile(address user) internal view returns (ArbitratorProfile storage) {
+        if (arbitrators[user].isRegistered) return arbitrators[user];
+        require(experts[user].isRegistered, "Not registered");
+        return experts[user];
+    }
+
+    function topUpStake() external payable nonReentrant {
+        ArbitratorProfile storage p = _profile(msg.sender);
+        uint256 required = arbitrators[msg.sender].isRegistered ? ARBITRATOR_STAKE : EXPERT_STAKE;
+        require(msg.value > 0 && p.stakedAmount + msg.value <= required, "Invalid top-up");
+        p.stakedAmount += msg.value;
+        emit StakeToppedUp(msg.sender, msg.value);
+    }
+
+    function _remove(address user, address[] storage pool, mapping(address => uint256) storage indices) internal {
+        uint256 index = indices[user] - 1;
+        address last = pool[pool.length - 1];
+        pool[index] = last;
+        indices[last] = index + 1;
+        pool.pop();
+        delete indices[user];
+    }
+
     function unstake() external nonReentrant {
+        ArbitratorProfile storage p = _profile(msg.sender);
+        require(p.activeDisputes == 0, "Active disputes");
+        uint256 amount = p.stakedAmount;
         if (arbitrators[msg.sender].isRegistered) {
-            require(arbitrators[msg.sender].activeDisputes == 0, "Active disputes");
-            uint256 amount = arbitrators[msg.sender].stakedAmount;
-            arbitrators[msg.sender].isRegistered = false;
-            arbitrators[msg.sender].stakedAmount = 0;
-            payable(msg.sender).transfer(amount);
-            emit Unstaked(msg.sender, amount);
-        } else if (experts[msg.sender].isRegistered) {
-            require(experts[msg.sender].activeDisputes == 0, "Active disputes");
-            uint256 amount = experts[msg.sender].stakedAmount;
-            experts[msg.sender].isRegistered = false;
-            experts[msg.sender].stakedAmount = 0;
-            _revokeRole(EXPERT_ROLE, msg.sender);
-            payable(msg.sender).transfer(amount);
-            emit Unstaked(msg.sender, amount);
+            _remove(msg.sender, registeredArbitrators, arbitratorIndex);
         } else {
-            revert("Not registered");
+            _remove(msg.sender, registeredExperts, expertIndex);
+            _revokeRole(EXPERT_ROLE, msg.sender);
         }
+        p.isRegistered = false;
+        p.stakedAmount = 0;
+        (bool sent, ) = payable(msg.sender).call{value: amount}("");
+        require(sent, "Stake transfer failed");
+        emit Unstaked(msg.sender, amount);
     }
 
-    function lockArbitrator(address _arbitrator) external onlyRole(RESOLUTION_ROLE) {
-        if (arbitrators[_arbitrator].isRegistered) {
-            arbitrators[_arbitrator].activeDisputes++;
-        } else if (experts[_arbitrator].isRegistered) {
-            experts[_arbitrator].activeDisputes++;
-        }
+    function lockArbitrator(address user) external onlyRole(RESOLUTION_ROLE) {
+        ArbitratorProfile storage p = _profile(user);
+        uint256 required = arbitrators[user].isRegistered ? ARBITRATOR_STAKE : EXPERT_STAKE;
+        require(p.stakedAmount >= required, "Insufficient stake");
+        p.activeDisputes++;
     }
 
-    function releaseArbitrator(address _arbitrator) external onlyRole(RESOLUTION_ROLE) {
-        if (arbitrators[_arbitrator].isRegistered) {
-            if (arbitrators[_arbitrator].activeDisputes > 0) {
-                arbitrators[_arbitrator].activeDisputes--;
-            }
-        } else if (experts[_arbitrator].isRegistered) {
-            if (experts[_arbitrator].activeDisputes > 0) {
-                experts[_arbitrator].activeDisputes--;
-            }
-        }
+    function releaseArbitrator(address user) external onlyRole(RESOLUTION_ROLE) {
+        ArbitratorProfile storage p = _profile(user);
+        require(p.activeDisputes > 0, "No active dispute");
+        p.activeDisputes--;
     }
 
-    function slash(address _user, uint256 _amount) external onlyRole(RESOLUTION_ROLE) nonReentrant {
-        if (arbitrators[_user].isRegistered) {
-            uint256 slashAmount = arbitrators[_user].stakedAmount >= _amount ? _amount : arbitrators[_user].stakedAmount;
-            arbitrators[_user].stakedAmount -= slashAmount;
-            arbitrators[_user].wrongVotes++;
-        } else if (experts[_user].isRegistered) {
-            uint256 slashAmount = experts[_user].stakedAmount >= _amount ? _amount : experts[_user].stakedAmount;
-            experts[_user].stakedAmount -= slashAmount;
-            experts[_user].wrongVotes++;
-        }
-        emit Slashed(_user, _amount);
+    function slash(address user, uint256 amount) external onlyRole(RESOLUTION_ROLE) nonReentrant {
+        ArbitratorProfile storage p = _profile(user);
+        uint256 actual = p.stakedAmount < amount ? p.stakedAmount : amount;
+        p.stakedAmount -= actual;
+        p.wrongVotes++;
+        slashedFunds += actual;
+        emit Slashed(user, actual);
     }
 
-    function reward(address _user, uint256 _amount) external onlyRole(RESOLUTION_ROLE) {
-        if (arbitrators[_user].isRegistered) {
-            arbitrators[_user].correctVotes++;
-        } else if (experts[_user].isRegistered) {
-            experts[_user].correctVotes++;
-        }
-        if (_amount > 0) {
-            emit Rewarded(_user, _amount);
-        }
+    // Record majority coherence only. No monetary reward is promised or minted.
+    function reward(address user, uint256 amount) external onlyRole(RESOLUTION_ROLE) {
+        require(amount == 0, "Monetary rewards unsupported");
+        _profile(user).correctVotes++;
+        emit Rewarded(user, 0);
     }
 
-    // Pseudo-random selection for prototype (NOT secure for prod)
-    function selectJury(uint256 _seed, uint256 _count) external view returns (address[] memory) {
-        require(registeredArbitrators.length >= _count, "Not enough arbitrators");
-        address[] memory jury = new address[](_count);
-        for (uint256 i = 0; i < _count; i++) {
-            uint256 index = (_seed + i) % registeredArbitrators.length;
-            jury[i] = registeredArbitrators[index];
-        }
-        return jury;
+    function withdrawSlashedFunds(address payable recipient, uint256 amount) external onlyRole(DEFAULT_ADMIN_ROLE) nonReentrant {
+        require(recipient != address(0) && amount <= slashedFunds, "Invalid withdrawal");
+        slashedFunds -= amount;
+        (bool sent, ) = recipient.call{value: amount}("");
+        require(sent, "Slash transfer failed");
+        emit SlashedFundsWithdrawn(recipient, amount);
     }
 
-    function selectExpertPanel(uint256 _seed, uint256 _count) external view returns (address[] memory) {
-        require(registeredExperts.length >= _count, "Not enough experts");
-        address[] memory panel = new address[](_count);
-        for (uint256 i = 0; i < _count; i++) {
-            uint256 index = (_seed + i) % registeredExperts.length;
-            panel[i] = registeredExperts[index];
+    function _select(uint256 seed, uint256 count, bool expert, address[] memory excluded) internal view returns (address[] memory) {
+        require(count > 0, "Empty panel");
+        address[] storage pool = expert ? registeredExperts : registeredArbitrators;
+        address[] memory eligible = new address[](pool.length);
+        uint256 size;
+        for (uint256 i; i < pool.length; i++) {
+            address user = pool[i];
+            ArbitratorProfile storage p = expert ? experts[user] : arbitrators[user];
+            bool allowed = p.isRegistered && p.stakedAmount >= (expert ? EXPERT_STAKE : ARBITRATOR_STAKE);
+            for (uint256 j; j < excluded.length; j++) if (user == excluded[j]) allowed = false;
+            if (allowed) eligible[size++] = user;
         }
+        require(size >= count, expert ? "Not enough experts" : "Not enough arbitrators");
+        address[] memory panel = new address[](count);
+        // Deterministic prototype selection. This is NOT adversary-resistant randomness.
+        uint256 start = seed % size;
+        for (uint256 i; i < count; i++) panel[i] = eligible[(start + i) % size];
         return panel;
+    }
+
+    function selectJury(uint256 seed, uint256 count) external view returns (address[] memory) {
+        return _select(seed, count, false, new address[](0));
+    }
+    function selectExpertPanel(uint256 seed, uint256 count) external view returns (address[] memory) {
+        return _select(seed, count, true, new address[](0));
+    }
+    function selectJuryExcluding(uint256 seed, uint256 count, address[] calldata excluded) external view returns (address[] memory) {
+        return _select(seed, count, false, excluded);
+    }
+    function selectExpertPanelExcluding(uint256 seed, uint256 count, address[] calldata excluded) external view returns (address[] memory) {
+        return _select(seed, count, true, excluded);
     }
 }

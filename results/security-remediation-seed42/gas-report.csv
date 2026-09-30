@@ -1,0 +1,14 @@
+Function,AverageGas,Calls
+registerArbitrator,129881,10
+registerExpert,155652,6
+createSLA,450902,1
+createDispute,230722,1000
+submitEvidence,206128,1000
+escalateToTier2,305708,379
+commitVote,63905,1892
+transitionToReveal,34235,530
+revealVote,89063,1892
+finalizeVote,118570,530
+enforce,35192,1000
+resolveTier1,61109,621
+appealToTier3,437955,151

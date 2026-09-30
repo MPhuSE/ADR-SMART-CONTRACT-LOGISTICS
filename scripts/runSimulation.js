@@ -16,6 +16,9 @@
 const hre = require("hardhat");
 const { ethers } = require("hardhat");
 const fs = require("fs");
+const crypto = require("crypto");
+const path = require("path");
+const OUTPUT_DIR = process.env.OUT || "results/security-fix";
 const { createObjectCsvWriter } = require("csv-writer");
 
 // ---- Seeded PRNG (mulberry32) -------------------------------------------------
@@ -33,8 +36,8 @@ function mulberry32(seed) {
 // ---- Experiment parameters (documented, overridable) --------------------------
 const SEED = parseInt(process.env.SEED || "42", 10);
 const NUM_DISPUTES = parseInt(process.env.NUM_DISPUTES || "1000", 10);
-const P_ARB_HONEST = parseFloat(process.env.P_ARB_HONEST || "0.8"); // jury honesty
-const P_EXP_HONEST = parseFloat(process.env.P_EXP_HONEST || "0.9"); // expert honesty
+const P_ARB_HONEST = parseFloat(process.env.P_ARB_HONEST || "0.8"); // per-vote correctness
+const P_EXP_HONEST = parseFloat(process.env.P_EXP_HONEST || "0.9"); // per-vote correctness
 const P_APPEAL = parseFloat(process.env.P_APPEAL || "0.4"); // P(losing party appeals a Tier 2 ruling)
 const ARBITRATOR_POOL_SIZE = parseInt(process.env.ARBITRATOR_POOL_SIZE || "10", 10);
 const EXPERT_POOL_SIZE = parseInt(process.env.EXPERT_POOL_SIZE || "6", 10);
@@ -93,7 +96,7 @@ async function main() {
     console.log(`Starting simulation: SEED=${SEED}, N=${NUM_DISPUTES}, ` +
         `P_ARB_HONEST=${P_ARB_HONEST}, P_EXP_HONEST=${P_EXP_HONEST}, P_APPEAL=${P_APPEAL}`);
 
-    if (!fs.existsSync("results")) fs.mkdirSync("results");
+    fs.mkdirSync(OUTPUT_DIR, { recursive: true });
 
     // Per-operation gas accumulator (feeds the reproducible per-operation table).
     const gasReportMap = {};
@@ -118,6 +121,8 @@ async function main() {
         await registry.getAddress()
     );
     await resolution.waitForDeployment();
+
+    await evidenceVault.setResolution(await resolution.getAddress());
 
     // Roles
     await slaContract.grantRole(await slaContract.ORACLE_ROLE(), oracle.address);
@@ -160,12 +165,12 @@ async function main() {
     const slaId = 1;
     const salt = ethers.encodeBytes32String("salt");
 
-    // Configured commit/reveal windows are protocol constants (1 day each), not
-    // measured wall-clock latency. Reported as "sum of configured windows".
-    const TIER_WINDOW_MIN = { 1: 0, 2: 2 * 24 * 60, 3: 4 * 24 * 60 };
+    // Configured waits for the exercised path, including any unexercised review
+    // window that must expire before enforcement. Not human wall-clock latency.
+    const TIER_WINDOW_MIN = { 1: 24 * 60, 2: 3 * 24 * 60, 3: 4 * 24 * 60 };
 
     const csvWriter = createObjectCsvWriter({
-        path: "results/results.csv",
+        path: path.join(OUTPUT_DIR, "results.csv"),
         header: [
             { id: "disputeId", title: "disputeId" },
             { id: "type", title: "type" },
@@ -266,7 +271,7 @@ async function main() {
             tier = 1;
         } else {
             // Tier 2 jury (stochastic commit-reveal).
-            rc = await (await resolution.escalateToTier2(i)).wait();
+            rc = await (await resolution.connect(buyer).escalateToTier2(i)).wait();
             addResolve(rc.gasUsed); trackGas("escalateToTier2", rc.gasUsed);
             arbitratorCount = 3;
             const jury = (await resolution.getTier2Jury(i)).map((a) => arbitrators.find((s) => s.address === a));
@@ -288,6 +293,8 @@ async function main() {
             }
         }
 
+        const terminal = await resolution.disputes(i);
+        if (terminal.state !== 8n) await hre.network.provider.send("evm_setNextBlockTimestamp", [Number(terminal.deadline) + 1]);
         rc = await (await resolution.enforce(i)).wait();
         enforceGas += rc.gasUsed; trackGas("enforce", rc.gasUsed);
 
@@ -308,7 +315,7 @@ async function main() {
     }
 
     await csvWriter.writeRecords(results);
-    console.log("results/results.csv written");
+    console.log(path.join(OUTPUT_DIR, "results.csv") + " written");
 
     // ---- Aggregate summary -----------------------------------------------------
     const byTier = { 1: [], 2: [], 3: [] };
@@ -345,8 +352,11 @@ async function main() {
     const tier3Ci = wilson95(nCorrect(byTier[3]), byTier[3].length);
 
     const summary = {
+        artifactVersion: "security-fix (new contracts; not the archived manuscript measurements)",
         seed: SEED,
-        schemaVersion: 2,
+        schemaVersion: 3,
+        implementationHashes: Object.fromEntries(["SLAContract", "EvidenceVault", "DisputeRegistry", "DisputeResolution"].map((name) => [name,
+            crypto.createHash("sha256").update(fs.readFileSync(path.join(__dirname, "..", "contracts", name + ".sol"))).digest("hex")])),
         params: {
             numDisputes: NUM_DISPUTES,
             pArbHonest: P_ARB_HONEST,
@@ -400,12 +410,12 @@ async function main() {
         },
         gasAccounting: {
             includedInPerCase: ["createDispute", "submitEvidence", "resolveTier1 or voting path", "enforce"],
-            excludedFromPerCase: ["deployments", "role grants", "updateMeasuredValue", "createSLA", "voter registration"],
+            excludedFromPerCase: ["deployments", "role grants", "vault binding", "updateMeasuredValue", "createSLA", "voter registration", "bond withdrawal"],
             note: "transitionToReveal is included in resolveGas and is also recorded separately in gas-report.csv from schemaVersion 2 onward.",
         },
         configuredWindows: {
             tier1Minutes: TIER_WINDOW_MIN[1], tier2Minutes: TIER_WINDOW_MIN[2], tier3Minutes: TIER_WINDOW_MIN[3],
-            note: "Sum of configured commit/reveal windows (protocol constants), NOT measured wall-clock latency.",
+            note: "Configured waits on the exercised immediate-routing path: Tier 1 includes its review window; Tier 2 includes jury commit/reveal plus appeal window; Tier 3 appeals immediately and includes jury/expert commit/reveal only. NOT measured human latency.",
         },
         slashing: {
             nonRevealSlash: 0,
@@ -413,8 +423,8 @@ async function main() {
         },
     };
 
-    fs.writeFileSync("results/summary.json", JSON.stringify(summary, null, 2));
-    console.log("results/summary.json written");
+    fs.writeFileSync(path.join(OUTPUT_DIR, "summary.json"), JSON.stringify(summary, null, 2));
+    console.log(path.join(OUTPUT_DIR, "summary.json") + " written");
 
     // Per-operation gas table (pure gas units, well-defined denominator = call count).
     let gasCsv = "Function,AverageGas,Calls\n";
@@ -422,8 +432,8 @@ async function main() {
         const avg = Math.round(Number(gasReportMap[fn].sum) / gasReportMap[fn].count);
         gasCsv += `${fn},${avg},${gasReportMap[fn].count}\n`;
     }
-    fs.writeFileSync("results/gas-report.csv", gasCsv);
-    console.log("results/gas-report.csv written");
+    fs.writeFileSync(path.join(OUTPUT_DIR, "gas-report.csv"), gasCsv);
+    console.log(path.join(OUTPUT_DIR, "gas-report.csv") + " written");
 
     console.log("\nDone.");
     console.log(`Tier routing: T1=${summary.routing.tier1.rate}%  T2=${summary.routing.tier2.rate}%  T3=${summary.routing.tier3.rate}%`);

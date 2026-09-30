@@ -1,0 +1,57 @@
+{
+  "baseCommit": "48d4c854955d80449a0c94386e0084188973e12a",
+  "environment": {
+    "node": "v24.19.0",
+    "hardhat": "2.28.6",
+    "solidity": "0.8.20",
+    "optimizerRuns": 200,
+    "evmVersion": "paris",
+    "localHardfork": "shanghai"
+  },
+  "tests": {
+    "command": "npm test",
+    "passing": 45,
+    "failing": 0,
+    "original": 12,
+    "securityRegression": 33
+  },
+  "coverage": {
+    "command": "npx hardhat coverage",
+    "passing": 45,
+    "scope": "four prototype contracts, excluding PaymentReceiver test fixture",
+    "statementsPercent": 99.21,
+    "branchesPercent": 77.27,
+    "functionsPercent": 98.08,
+    "linesPercent": 99.06,
+    "independentWorkspace": true
+  },
+  "simulation": {
+    "command": "SEED=42 NUM_DISPUTES=1000 OUT=results/security-remediation-seed42 npm run simulate",
+    "cases": 1000,
+    "seed": 42,
+    "tierCounts": {
+      "1": 621,
+      "2": 228,
+      "3": 151
+    },
+    "validated": [
+      "case count",
+      "gas phase sums",
+      "correctness flags",
+      "source SHA-256 hashes"
+    ],
+    "summary": "results/security-remediation-seed42/summary.json"
+  },
+  "deployment": {
+    "command": "npx hardhat run --no-compile scripts/deploy.js",
+    "network": "ephemeral local Hardhat",
+    "succeeded": true,
+    "publicChainDeployment": false
+  },
+  "sourceHashes": {
+    "SLAContract": "d0c1974ed70a07f8d023669b5cb63f615df2604d6bed31e6c44a53e510452ff7",
+    "EvidenceVault": "ed5f2020cbbfa95df2716fa8b56f98624be265f0823a9199103cd26f1686be1c",
+    "DisputeRegistry": "ecd85c464f3156f0db399d2a87872ed0efba3ac83a79297aee5aea9c9f70f38f",
+    "DisputeResolution": "359172bcd4f807b9c4c62261df9e88aa5f3b7d7e99aef5492033af5610399ce2"
+  }
+}
