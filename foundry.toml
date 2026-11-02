@@ -1,0 +1,10 @@
+[profile.default]
+src = 'contracts'
+test = 'foundry-tests'
+out = 'out-foundry'
+libs = ['node_modules']
+remappings = ['@openzeppelin/=node_modules/@openzeppelin/']
+solc_version = '0.8.20'
+optimizer = true
+optimizer_runs = 200
+fuzz = { runs = 48 }
