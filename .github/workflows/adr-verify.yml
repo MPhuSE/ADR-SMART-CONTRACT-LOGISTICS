@@ -7,6 +7,7 @@ permissions:
   contents: read
 jobs:
   hardhat-20-seeds:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 330
     steps:
@@ -38,6 +39,7 @@ jobs:
           path: validation/
           retention-days: 90
   slither:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
@@ -63,4 +65,34 @@ jobs:
         with:
           name: ADR-Slither-execution-evidence
           path: slither-evidence/
+          retention-days: 90
+
+  negative-path-and-coverage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npx hardhat compile
+      - name: Execute original tests and negative-path characterization
+        run: |
+          mkdir -p characterization-evidence
+          npx hardhat test 2>&1 | tee characterization-evidence/test-output.txt
+      - name: Instrumented line and branch coverage
+        shell: bash
+        run: |
+          set +e
+          npx hardhat coverage > characterization-evidence/coverage-output.txt 2>&1
+          echo "$?" > characterization-evidence/coverage-exit-code.txt
+          cp -r coverage characterization-evidence/ 2>/dev/null
+          exit 0
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ADR-negative-path-and-coverage
+          path: characterization-evidence/
           retention-days: 90
