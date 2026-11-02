@@ -20,7 +20,9 @@ jobs:
         with:
           version: stable
       - name: Foundry parameterized counterexample witness tests
+        shell: bash
         run: |
+          set -euo pipefail
           mkdir -p foundry-evidence
           forge --version | tee foundry-evidence/version.txt
           forge test --match-contract FrozenCounterexamplesFoundry -vv 2>&1 | tee foundry-evidence/test-output.txt
