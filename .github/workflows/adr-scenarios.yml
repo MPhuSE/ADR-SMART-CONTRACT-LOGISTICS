@@ -1,0 +1,38 @@
+name: ADR contract-executed baseline and fault validation
+on:
+  push:
+    branches: [research/reproduce-2026-11-02]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  scenario-seeds:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npx hardhat compile
+      - name: Execute baselines and four fault conditions across 20 seeds each
+        shell: bash
+        run: |
+          set -euo pipefail
+          for scenario in tiered_no_appeal flat3 correlated selective_appeal non_reveal oracle_inversion; do
+            for seed in $(seq 1 20); do
+              mkdir -p "scenario-evidence/$scenario/seed_$seed"
+              SCENARIO="$scenario" SEED="$seed" NUM_DISPUTES=1000 npx hardhat run scripts/runScenarioInstrumented.js --network hardhat > "scenario-evidence/$scenario/seed_$seed/run.log" 2>&1
+              cp results/results.csv results/summary.json results/receipt-log.csv "scenario-evidence/$scenario/seed_$seed/"
+            done
+          done
+      - name: Reconcile receipt gas and calculate run-level variability
+        run: python3 scripts/audit_scenarios.py | tee scenario-evidence/audit.log
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ADR-scenario-120-runs
+          path: scenario-evidence/
+          retention-days: 90
