@@ -58,7 +58,7 @@ contract FrozenCounterexamplesFoundry {
     resolution.escalateToTier2(1);
     zeroVoteFinal(1);
     resolution.enforce(1);
-    (,,,DisputeResolution.State state,DisputeResolution.Ruling ruling,)=resolution.disputes(1);
+    (,,,DisputeResolution.State state,DisputeResolution.Ruling ruling,,,)=resolution.disputes(1);
     assert(state==DisputeResolution.State.Enforced && ruling==DisputeResolution.Ruling.None);
   }
   function testFuzz_I2_ReRegistrationCausesDuplicatePanel(uint8 x) public {
@@ -74,7 +74,7 @@ contract FrozenCounterexamplesFoundry {
     address outsider=address(uint160(0xD00 + uint160(salt)));
     if(outsider==buyer || outsider==seller) outsider=address(0xF00);
     vm.prank(outsider);resolution.createDispute(1,0,"");
-    (,,,DisputeResolution.State state,,)=resolution.disputes(1);
+    (,,,DisputeResolution.State state,,,,)=resolution.disputes(1);
     assert(state==DisputeResolution.State.Disputed);
   }
   function testFuzz_I4_OracleCanReplaceObservation(uint16 v) public {
