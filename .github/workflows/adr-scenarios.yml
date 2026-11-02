@@ -1,7 +1,5 @@
 name: ADR contract-executed baseline and fault validation
 on:
-  push:
-    branches: [research/reproduce-2026-11-02]
   workflow_dispatch:
 permissions:
   contents: read
