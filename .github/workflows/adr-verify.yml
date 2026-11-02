@@ -1,0 +1,66 @@
+name: ADR on-chain replication and Slither
+on:
+  push:
+    branches: [research/reproduce-2026-11-02]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  hardhat-20-seeds:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npx hardhat compile
+      - run: npx hardhat test | tee hardhat-test-output.txt
+      - name: Execute 20 independent networks with receipt-level logging
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p validation
+          cp hardhat-test-output.txt validation/
+          for seed in $(seq 1 20); do
+            SEED="$seed" NUM_DISPUTES=1000 npx hardhat run scripts/runSimulationInstrumented.js --network hardhat > "validation/run-$seed.log" 2>&1
+            mkdir -p "validation/runs/seed_$seed"
+            cp results/results.csv results/summary.json results/receipt-log.csv "validation/runs/seed_$seed/"
+          done
+      - name: Reconcile receipts and compute independent seed statistics
+        run: python3 scripts/audit_multiseed.py
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ADR-20-seed-onchain-evidence
+          path: validation/
+          retention-days: 90
+  slither:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npx hardhat compile
+      - run: python3 -m pip install slither-analyzer
+      - name: Execute Slither and retain raw output
+        shell: bash
+        run: |
+          mkdir -p slither-evidence
+          slither --version > slither-evidence/version.txt
+          set +e
+          slither . --json slither-evidence/findings.json > slither-evidence/stdout.txt 2> slither-evidence/stderr.txt
+          echo "$?" > slither-evidence/exit-code.txt
+          exit 0
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ADR-Slither-execution-evidence
+          path: slither-evidence/
+          retention-days: 90
