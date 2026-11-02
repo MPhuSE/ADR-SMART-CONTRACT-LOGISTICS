@@ -1,0 +1,32 @@
+name: ADR Foundry fuzz-parameterized counterexamples
+on:
+  push:
+    branches: [research/reproduce-2026-11-02]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  fuzz-parameterized:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
+      - name: Foundry parameterized counterexample witness tests
+        run: |
+          mkdir -p foundry-evidence
+          forge --version | tee foundry-evidence/version.txt
+          forge test --match-contract FrozenCounterexamplesFoundry -vv 2>&1 | tee foundry-evidence/test-output.txt
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ADR-foundry-counterexample-evidence
+          path: foundry-evidence/
+          retention-days: 90
